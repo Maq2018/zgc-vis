@@ -18,5 +18,5 @@ def _bulk_write(_table, _ops):
     except Exception as e:
         logger.error(f"Failed to bulk write for {_table} with len={len(_ops)},"
                      f" err: {e}, stack: {traceback.format_exc()}")
-        return -1
+        return 0
     return nb_inserted

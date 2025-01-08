@@ -4,7 +4,7 @@ import json
 import logging
 import numpy as np
 from database.services import _bulk_write
-from asn.models import VisNode, VisCluster, VisASRank, VisPhyLink, VisLogicNode, VisLogicLink
+from asn.models import VisPhysicalNode, VisSubmarineCable, VisLandingPoint, VisLandCable, VisLogicNode, VisLogicLink
 from database.models import TableSelector
 from config import Config
 from logs import configure_log
@@ -14,7 +14,8 @@ from collections import defaultdict
 
 
 logger = logging.getLogger("cli")
-STEP = 10
+STEP = 30
+SKIP = 1
 
 
 @click.group()
@@ -22,184 +23,138 @@ def endpoint():
     pass
 
 
-@endpoint.group(name="nodes")
-def nodes():
+@endpoint.group(name="physical-nodes")
+def physical_nodes():
     pass
 
 
-def group_nodes(node_path):
-    asn_cty_map = defaultdict(list)
-    nb_node = 0
-    nb_unknown = 0
-    pos_map = dict()
-    with open(node_path, 'r') as fp:
-        for line in fp:
-            if line.startswith('#'):
-                continue
-            nb_node += 1
-            asn, cty, lat, lon = line.strip().split(',')
-            if cty == 'Unknown':
-                nb_unknown += 1
-                continue
-            lat = float(lat)
-            lon = float(lon)
-            key = (asn, cty)
-            asn_cty_map[key].append(nb_node)
-            pos_map[nb_node] = np.array([lat, lon], dtype=np.double)
-    logger.info(f"Total nodes: {nb_node}. Unknown: {nb_unknown}. Valid: {nb_node - nb_unknown}")
-    node_dir, node_file = os.path.split(node_path)
-    pfx, sfx = os.path.splitext(node_file)
-    new_node_file = pfx + '-group' + sfx
-    group_distance = 30 # km
-    logger.info(f"Grouping nodes by distance {group_distance} km...")
-    with open(os.path.join(node_dir, new_node_file), 'w') as tp:
-        cluster_id = 0
-        for key, idx_list in asn_cty_map.items():
-            asn, cty = key
-            cluster_list = cluster_by_distance(idx_list, pos_map, min_distance=group_distance)
-            for cluster in cluster_list:
-                cluster_id += 1
-                position = calc_center_pos(cluster, pos_map)
-                tp.write(f"{cluster_id},{asn},{cty},{",".join(map(lambda x: "%.4f" % x, position))}\n")
-    logger.info(f"Total groups: {cluster_id}")
-
-
-def form_cluster(node_path):
-    pos_map = dict()
-    with open(node_path, 'r') as fp:
-        for line in fp:
-            if line.startswith('#'):
-                continue
-            idx, asn, cty, lat, lon = line.strip().split(',')
-            pos_map[idx] = np.array([float(lat), float(lon)], dtype=np.double)
-    idx_list = list(pos_map.keys())
-    cluster_distance = 50 # km
-    logger.info(f"Clustering nodes by distance {cluster_distance} km.")
-    cluster_list = cluster_by_distance(idx_list, pos_map, min_distance=cluster_distance)
-    cluster_id = 0
-    nidx2cidx = dict()
-    node_dir = os.path.dirname(node_path)
-    cluster_file = "as_CC_cluster.csv"
-    with open(os.path.join(node_dir, cluster_file), 'w') as tp:
-        for cluster in cluster_list:
-            cluster_id += 1
-            position = calc_center_pos(cluster, pos_map)
-            for idx in cluster:
-                nidx2cidx[idx] = cluster_id
-            size = len(cluster)
-            tp.write(f"{cluster_id},{size},{','.join(map(lambda x: "%.4f" % x, position))}\n")
-    logger.info(f"Total clusters: {cluster_id}")
-    # append cluster id to node file
-    new_node_file = os.path.basename(node_path).replace('.csv', '-cluster.csv')
-    with open(os.path.join(node_dir, new_node_file), 'w') as tp:
-        with open(node_path, 'r') as fp:
-            for line in fp:
-                if line.startswith('#'):
-                    continue
-                idx, asn, cty, lat, lon = line.strip().split(',')
-                cluster_id = nidx2cidx[idx]
-                tp.write(f"{idx},{asn},{cty},{lat},{lon},{cluster_id}\n")
-
-
-@nodes.command('import')
-@click.option('--file-path', '-p', type=click.Path(exists=True), required=True)
-def load_nodes(file_path):
-    group_nodes(file_path)
-    group_file_path = file_path.replace('.csv', '-group.csv')
-    form_cluster(group_file_path)
-    cluster_file_path = group_file_path.replace('.csv', '-cluster.csv')
-    _nodes_table = TableSelector.get_nodes_table(name='default_sync')
-    _nodes_table.delete_many({})
-    op_list = list()
-    nb_node = 0
-    nb_inseted = 0
-    with open(cluster_file_path, 'r') as fp:
-        for line in fp:
-            line = line.strip()
-            if line.startswith('#'):
-                continue
-            nb_node += 1
-            item = VisNode.from_line(line)
-            op_list.append(item)
-            if len(op_list) > STEP:
-                res = _bulk_write(_nodes_table, op_list)
-                if res > 0:
-                    nb_inseted += res
-                op_list.clear()
-    if op_list:
-        res = _bulk_write(_nodes_table, op_list)
-        if res > 0:
-            nb_inseted += res
-        op_list.clear()
-    logger.info(f"{os.path.basename(cluster_file_path)} has {nb_node} nodes, {nb_inseted} are imported.")
-
-
-@endpoint.group(name="clusters")
-def clusters():
-    pass
-
-
-@clusters.command('import')
-@click.option('--file-path', '-p', type=click.Path(exists=True), required=True)
-def load_clusters(file_path):
-    _table = TableSelector.get_clusters_table(name='default_sync')
+@physical_nodes.command('import')
+@click.option('--file', '-f', type=click.Path(exists=True), required=True)
+def import_physical_nodes(file):
+    _table = TableSelector.get_physical_nodes_table(name='default_sync')
     _table.delete_many({})
+
+    nb_line = 0
+    nb_node = 0
     op_list = list()
-    nb_cluster = 0
-    nb_inserted = 0
-    with open(file_path, 'r') as fp:
+    with open(file, 'r') as fp:
         for line in fp:
-            line = line.strip()
-            if line.startswith('#'):
+            nb_line += 1
+            if nb_line <= SKIP:
                 continue
-            nb_cluster += 1
-            item = VisCluster.from_line(line)
-            op_list.append(item)
+            phyical_node_obj = VisPhysicalNode.from_line(line)
+            if phyical_node_obj:
+                phyical_node_obj['index'] = nb_line
+            op_list.append(phyical_node_obj)
             if len(op_list) > STEP:
-                res = _bulk_write(_table, op_list)
-                if res > 0:
-                    nb_inserted += res
+                nb_node += _bulk_write(_table, op_list)
                 op_list.clear()
-    if op_list:
-        res = _bulk_write(_table, op_list)
-        if res > 0:
-            nb_inserted += res
+    if len(op_list) > 0:
+        nb_node += _bulk_write(_table, op_list)
         op_list.clear()
-    logger.info(f"{os.path.basename(file_path)} has {nb_cluster} clusters, {nb_inserted} are imported.")
+    
+    logger.info(f"{os.path.basename(file)} has {nb_line} records, {nb_node} are imported.")
 
 
-@endpoint.group(name="asrank")
-def asrank():
+@endpoint.group(name="submarine-cables")
+def submarine_cables():
     pass
 
-@asrank.command('import')
-@click.option('--file-path', '-p', type=click.Path(exists=True), required=True)
-def load_asrank(file_path):
-    logger.info(f"Importing ASRank data from {os.path.basename(file_path)}")
-    op_list = list()
-    _table = TableSelector.get_asrank_table(name='default_sync')
+
+@submarine_cables.command('import')
+@click.option('--file', '-f', type=click.Path(exists=True), required=True)
+def import_submarine_cable(file):
+    _table = TableSelector.get_submarine_cables_table(name='default_sync')
     _table.delete_many({})
-    nb_record = 0
-    nb_inserted = 0
-    with open(file_path, 'r') as fp:
+
+    nb_line = 0
+    nb_cable = 0
+    op_list = list()
+
+    with open(file, 'r') as fp:
         for line in fp:
-            line = line.strip()
-            if line.startswith('#'):
+            nb_line += 1
+            if nb_line <= SKIP:
                 continue
-            nb_record += 1
-            item = VisASRank.from_line(line, idx=nb_record)
-            op_list.append(item)
+            cable_obj = VisSubmarineCable.from_line(line)
+            op_list.append(cable_obj)
             if len(op_list) > STEP:
-                res = _bulk_write(_table, op_list)
-                if res > 0:
-                    nb_inserted += res
+                nb_cable += _bulk_write(_table, op_list)
                 op_list.clear()
-    if op_list:
-        res = _bulk_write(_table, op_list)
-        if res > 0:
-            nb_inserted += res
+    if len(op_list) > 0:
+        nb_cable += _bulk_write(_table, op_list)
         op_list.clear()
-    logger.info(f"{os.path.basename(file_path)} has {nb_record} records, {nb_inserted} are imported.")
+
+    logger.info(f"{os.path.basename(file)} has {nb_line} records, {nb_cable} are imported.")
+
+
+@endpoint.group(name="landing-points")
+def landing_points():
+    pass
+
+
+@landing_points.command('import')
+@click.option('--file', '-f', type=click.Path(exists=True), required=True)
+def import_landing_points(file):
+    _table = TableSelector.get_landing_points_table(name='default_sync')
+    _table.delete_many({})
+
+    nb_line = 0
+    nb_point = 0
+    op_list = list()
+
+    with open(file, 'r') as fp:
+        for line in fp:
+            nb_line += 1
+            if nb_line <= SKIP:
+                continue
+            point_obj = VisLandingPoint.from_line(line)
+            # Todo: when loading file with complete information, remove fill_unknown_fields
+            if point_obj is not None:
+                VisLandingPoint.fill_unknown_fields(point_obj, nb_line)
+            op_list.append(point_obj)
+            if len(op_list) > STEP:
+                nb_point += _bulk_write(_table, op_list)
+                op_list.clear()
+    if len(op_list) > 0:
+        nb_point += _bulk_write(_table, op_list)
+        op_list.clear()
+
+    logger.info(f"{os.path.basename(file)} has {nb_line} records, {nb_point} are imported.")
+
+
+@endpoint.group(name="land-cables")
+def land_cables():
+    pass
+
+
+@land_cables.command('import')
+@click.option('--file', '-f', type=click.Path(exists=True), required=True)
+def import_land_cables(file):
+    _table = TableSelector.get_land_cables_table(name='default_sync')
+    _table.delete_many({})
+
+    nb_line = 0
+    nb_cable = 0
+    op_list = list()
+
+    with open(file, 'r') as fp:
+        for line in fp:
+            nb_line += 1
+            if nb_line <= SKIP:
+                continue
+            cable_obj = VisLandCable.from_line(line)
+            if cable_obj is not None:
+                VisLandCable.fill_unknown_fields(cable_obj, nb_line)
+            op_list.append(cable_obj)
+            if len(op_list) > STEP:
+                nb_cable += _bulk_write(_table, op_list)
+                op_list.clear()
+    if len(op_list) > 0:
+        nb_cable += _bulk_write(_table, op_list)
+        op_list.clear()
+
+    logger.info(f"{os.path.basename(file)} has {nb_line} records, {nb_cable} are imported.")
 
 
 @endpoint.group(name="phy-links")
