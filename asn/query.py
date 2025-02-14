@@ -33,33 +33,28 @@ class LandCableQuery(BaseModel):
     idxs: str = Field(Query(default=''))
     # Todo: add date
 
-class NodeQuery(BaseModel):
-    idxs: str = Field(Query(default=''))
-    asns: str = Field(Query(default=''))
-    ctys: str = Field(Query(default=''))
-    cidxs: str = Field(Query(default=''))
-
-
-class ClusterQuery(BaseModel):
-    idxs: str = Field(Query(default=''))
-
-
-class ASRankQuery(BaseModel):
-    asns: str = Field(Query(default=''))
-    limit: int = Field(Query(default=10))
-
-
-class PhyLinkQuery(BaseModel):
-    nidxs: str = Field(Query(default=''))
-    asns: str = Field(Query(default=''))
-    ctys: str = Field(Query(default=''))
-    ltypes: str = Field(Query(default=''))
-
-class LogicLinkQuery(BaseModel):
-    idxs: str = Field(Query(default=''))
-    asns: str = Field(Query(default=''))
-
 class LogicNodeQuery(BaseModel):
     idxs: str = Field(Query(default=''))
     asns: str = Field(Query(default=''))
-    ctys: str = Field(Query(default=''))
+
+class LogicLinkQuery(BaseModel):
+    idxs: str = Field(Query(default=''))
+    asn: str = Field(Query(default=''))
+    asns: str = Field(Query(default=''))
+    astuple: str = Field(Query(default=''))
+
+class PoPQuery(BaseModel):
+    idxs: str = Field(Query(default=''))
+    asns: str = Field(Query(default=''))
+    fidxs: str = Field(Query(default='')) # facility_id(s)
+    cidxs: str = Field(Query(default='')) # city_ids
+    lidxs: str = Field(Query(default='')) # landing_point_ids
+
+class PhyLinkQuery(BaseModel):
+    idxs: str = Field(Query(default=''))
+    pidxs: str = Field(Query(default='')) # pop_ids
+    asns: str = Field(Query(default='')) # asns: asn
+    astuple: str = Field(Query(default=''))
+
+class CityQuery(BaseModel):
+    idxs: str = Field(Query(default=''))

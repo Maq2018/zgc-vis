@@ -40,3 +40,18 @@ class TableSelector:
     def get_logic_links_table(cls, name='default'):
         db = getattr(cls.Meta.db_driver, name)
         return db.vis.vis_logic_links_table
+    
+    @classmethod
+    def get_pop_table(cls, name='default'):
+        db = getattr(cls.Meta.db_driver, name)
+        return db.vis.vis_pop_table
+    
+    @classmethod
+    def get_phy_links_table(cls, name='default'):
+        db = getattr(cls.Meta.db_driver, name)
+        return db.vis.vis_phy_links_table
+    
+    @classmethod
+    def get_city_table(cls, name='default'):
+        db = getattr(cls.Meta.db_driver, name)
+        return db.vis.vis_city_table

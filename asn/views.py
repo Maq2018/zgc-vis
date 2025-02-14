@@ -1,27 +1,23 @@
+import logging
 from fastapi import APIRouter, Depends
 from database.models import TableSelector
 from .query import (
     PhysicalNodeQuery, 
     SubmarineCableQuery,
     LandingPointQuery,
-    LandCableQuery,
-    ASRankQuery, 
-    PhyLinkQuery, 
+    LandCableQuery, 
     LogicLinkQuery, 
-    ClusterQuery, 
-    LogicNodeQuery
+    LogicNodeQuery,
+    PoPQuery,
+    PhyLinkQuery,
+    CityQuery
 )
-import logging
 
 
 router = APIRouter(prefix='/servloc')
 logger = logging.getLogger('asn.views')
-NB_NODE_SAMPLE = 10000
-NB_PHY_LINK_SAMPLE = 200000
 NB_LOGIC_NODE_SAMPLE = 10000
 NB_LOGIC_LINK_SAMPLE = 10000
-MIN_DISTANCE = 100
-MAX_DISTANCE = 8000
 
 
 @router.get('/physical-nodes/detail')
@@ -99,84 +95,31 @@ async def get_land_cables(args: LandCableQuery = Depends()):
         if args.idxs:
             query_params['index'] = {'$in': [int(idx) for idx in args.idxs.split(',')]}
         data = []
-        async for cur in _table.find(query_params, {'_id': 0}).limit(500):
+        async for cur in _table.find(query_params, {'_id': 0}):
             data.append(cur)
         return {'data': data, 'status': 'ok', 'message': ''}
     except Exception as e:
         logger.error(f'Fail to get land cables with {args}, err: {e}')
         return {'data': [], 'status': 'bad', 'message': str(e)}
+    
 
-
-@router.get('/nodes/summary/country')
-async def get_nodes_summary_country():
+@router.get('/logic-nodes/detail')
+async def get_logic_nodes(args: LogicNodeQuery = Depends()):
     try:
-        _table = TableSelector.get_nodes_table()
-        pipe = [
-            {'$group': {'_id': '$country', 'count': {'$sum': 1}}},
-            {'$sort': {'count': -1}},
-            {'$limit': 10}
-        ]
-        data = []
-        async for cur in _table.aggregate(pipe):
-            data.append(cur)
-        return {'data': data, 'status': 'ok', 'message': ''}
-    except Exception as e:
-        logger.error(f'failed to get nodes summary with {e}')
-        return {'data': [], 'status': 'bad', 'message': str(e)}
-
-@router.get('/nodes/summary/asn')
-async def get_nodes_summary_asn():
-    try:
-        _table = TableSelector.get_nodes_table()
-        pipe = [
-            {'$group': {'_id': '$asn', 'count': {'$sum': 1}}},
-            {'$sort': {'count': -1}},
-            {'$limit': 10}
-        ]
-        data = []
-        async for cur in _table.aggregate(pipe):
-            data.append(cur)
-        return {'data': data, 'status': 'ok', 'message': ''}
-    except Exception as e:
-        logger.error(f'failed to get nodes summary with {e}')
-        return {'data': [], 'status': 'bad', 'message': str(e)}
-
-@router.get('/asrank/detail')
-async def get_asrank(args: ASRankQuery = Depends()):
-    try:
-        _table = TableSelector.get_asrank_table()
-        # setting up query parameters
+        _table = TableSelector.get_logic_nodes_table()
         query_params = dict()
+        if args.idxs:
+            query_params['index'] = {'$in': [int(idx) for idx in args.idxs.split(',')]}
         if args.asns:
             query_params['asn'] = {'$in': [int(asn) for asn in args.asns.split(',')]}
         data = []
-        async for cur in _table.find(query_params, {'_id': 0}).sort({'rank': 1}).limit(args.limit):
+        async for cur in _table.find(query_params, {'_id': 0}).sort({'rank': 1}).limit(NB_LOGIC_NODE_SAMPLE):
             data.append(cur)
         return {'data': data, 'status': 'ok', 'message': ''}
     except Exception as e:
-        logger.error(f'failed to get asrank data with {args}, err: {e}')
+        logger.error(f'failed to get logic_nodes data with {args}, err: {e}')
         return {'data': [], 'status': 'bad', 'message': str(e)}
-    
-@router.get('/phy-links/detail')
-async def get_phy_links(args: PhyLinkQuery = Depends()):
-    try:
-        _table = TableSelector.get_phy_links_table()
-        query_params = dict()
-        if args.nidxs:
-            or_expr = [{'src_nidx': {'$in': [int(idx) for idx in args.nidxs.split(',')]}}, {'dst_nidx': {'$in': [int(idx) for idx in args.nidxs.split(',')]}}]
-            query_params['$or'] = or_expr
-        elif args.asns:
-            or_expr = [{'src_asn': {'$in': [int(asn) for asn in args.asns.split(',')]}}, {'dst_asn': {'$in': [int(asn) for asn in args.asns.split(',')]}}]
-            query_params['$or'] = or_expr
-        # query_params['cross_cluster'] = True
-        # query_params['distance'] = {'$gt': MIN_DISTANCE, '$lt': MAX_DISTANCE}
-        data = []
-        async for cur in _table.find(query_params, {'_id': 0}).limit(NB_PHY_LINK_SAMPLE):
-            data.append(cur)
-        return {'data': data, 'status': 'ok', 'message': ''}
-    except Exception as e:
-        logger.error(f'failed to get phy_links data with {args}, err: {e}')
-        return {'data': [], 'status': 'bad', 'message': str(e)}
+
     
 @router.get('/logic-links/detail')
 async def get_logic_links(args: LogicLinkQuery = Depends()):
@@ -184,41 +127,79 @@ async def get_logic_links(args: LogicLinkQuery = Depends()):
         _table = TableSelector.get_logic_links_table()
         query_params = dict()
         if args.idxs:
-            src_idx_params = {'src_node_index': {'$in': [int(idx) for idx in args.idxs.split(',')]}}
-            dst_idx_params = {'dst_node_index': {'$in': [int(idx) for idx in args.idxs.split(',')]}}
-            query_params['$or'] = [src_idx_params, dst_idx_params]
-        if args.asns:
-            src_asn_params = {'src_asn': {'$in': [int(asn) for asn in args.asns.split(',')]}}
-            dst_asn_params = {'dst_asn': {'$in': [int(asn) for asn in args.asns.split(',')]}}
-            query_params['$or'] = [src_asn_params, dst_asn_params]
+            query_params['index'] = {'$in': [int(idx) for idx in args.idxs.split(',')]}
+        elif args.asn:
+            query_params['$or'] = [{'src_asn': int(args.asn)}, {'dst_asn': int(args.asn)}]
+        elif args.asns:
+            asns = [int(asn) for asn in args.asns.split(',')]
+            query_params['$and'] = [{'src_asn': {'$in': asns}}, {'dst_asn': {'$in': asns}}]
+        elif args.astuple:
+            asn1, asn2 = map(int, args.astuple.strip().split(','))
+            query_params['$or'] = [{'src_asn': asn1, 'dst_asn': asn2}, {'src_asn': asn2, 'dst_asn': asn1}]
         data = []
-        pipeline = [
-            {'$match': query_params},
-            {'$sample': {'size': NB_LOGIC_LINK_SAMPLE}},
-            {'$project': {'_id': 0}}
-        ]
-        async for cur in _table.aggregate(pipeline):
+        async for cur in _table.find(query_params, {'_id': 0}).limit(NB_LOGIC_LINK_SAMPLE):
             data.append(cur)
         return {'data': data, 'status': 'ok', 'message': ''}
     except Exception as e:
         logger.error(f'failed to get logic_links data with {args}, err: {e}')
         return {'data': [], 'status': 'bad', 'message': str(e)}
     
-@router.get('/logic-nodes/detail')
-async def get_logic_nodes(args: LogicNodeQuery = Depends()):
+@router.get('/pop/detail')
+async def get_pop(args: PoPQuery = Depends()):
     try:
-        _table = TableSelector.get_logic_nodes_table()
+        _table = TableSelector.get_pop_table()
         query_params = dict()
         if args.idxs:
-            query_params['index'] = {'$in': [int(idx) for idx in args.idxs.split(',') if idx.isdigit()]}
+            query_params['index'] = {'$in': [int(idx) for idx in args.idxs.split(',')]}
         if args.asns:
             query_params['asn'] = {'$in': [int(asn) for asn in args.asns.split(',')]}
-        if args.ctys:
-            query_params['country_code'] = {'$in': args.ctys.split(',')}
+        if args.fidxs:
+            query_params['facility_id'] = {'$in': [int(fid) for fid in args.fidxs.split(',')]}
+        if args.cidxs:
+            query_params['city_id'] = {'$in': [int(cid) for cid in args.cidxs.split(',')]}
+        if args.lidxs:
+            query_params['landing_point_id'] = {'$in': [int(lid) for lid in args.lidxs.split(',')]}
         data = []
-        async for cur in _table.find(query_params, {'_id': 0}).sort({'rank': 1}).limit(NB_LOGIC_NODE_SAMPLE):
+        async for cur in _table.find(query_params, {'_id': 0}):
             data.append(cur)
         return {'data': data, 'status': 'ok', 'message': ''}
     except Exception as e:
-        logger.error(f'failed to get logic_nodes data with {args}, err: {e}')
+        logger.error(f'failed to get pop data, err: {e}')
+        return {'data': [], 'status': 'bad', 'message': str(e)}
+    
+@router.get('/phy-links/detail')
+async def get_phy_links(args: PhyLinkQuery = Depends()):
+    try:
+        _table = TableSelector.get_phy_links_table()
+        query_params = dict()
+        if args.idxs:
+            query_params['index'] = {'$in': [int(idx) for idx in args.idxs.split(',')]}
+        elif args.pidxs:
+            query_params['$or'] = [{'src_pop_index': {'$in': [int(pid) for pid in args.pidxs.split(',')]}}, {'dst_pop_index': {'$in': [int(pid) for pid in args.pidxs.split(',')]}}]
+        elif args.asns:
+            query_params['$or'] = [{'src_asn': {'$in': [int(asn) for asn in args.asns.split(',')]}}, {'dst_asn': {'$in': [int(asn) for asn in args.asns.split(',')]}}]
+        elif args.astuple:
+            asn1, asn2 = map(int, args.astuple.strip().split(','))
+            query_params['$or'] = [{'src_asn': asn1, 'dst_asn': asn2}, {'src_asn': asn2, 'dst_asn': asn1}]
+        data = []
+        async for cur in _table.find(query_params, {'_id': 0}):
+            data.append(cur)
+        return {'data': data, 'status': 'ok', 'message': ''}
+    except Exception as e:
+        logger.error(f'failed to get phy_links data, err: {e}')
+        return {'data': [], 'status': 'bad', 'message': str(e)}
+    
+@router.get('/city/detail')
+async def get_city(args: CityQuery = Depends()):
+    try:
+        _table = TableSelector.get_city_table()
+        query_params = dict()
+        if args.idxs:
+            query_params['index'] = {'$in': [int(idx) for idx in args.idxs.split(',')]}
+        data = []
+        async for cur in _table.find(query_params, {'_id': 0}):
+            data.append(cur)
+        return {'data': data, 'status': 'ok', 'message': ''}
+    except Exception as e:
+        logger.error(f'failed to get city data, err: {e}')
         return {'data': [], 'status': 'bad', 'message': str(e)}

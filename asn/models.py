@@ -189,6 +189,83 @@ class VisLandCable(BaseModel):
     def fill_unknown_fields(cls, obj, idx):
         obj['index'] = idx
         return obj
+    
+
+class VisPop(BaseModel):
+    index: int
+    asn: int
+    latitude: float
+    longitude: float
+    facility_id: int
+    city_id: int
+    landing_point_id: int
+    distance: float
+
+    @classmethod
+    def from_line(cls, line: str):
+        keys = ['index', 'asn', 'latitude', 'longitude', 'facility_id', 'city_id', 'landing_point_id', 'distance']
+        try:
+            item = dict(zip(keys, split_string(line)))
+            assert len(item) == 8
+            _index = int(item['index'])
+            _asn = int(item['asn'])
+            _latitude = to_float(item['latitude'])
+            _longitude = to_float(item['longitude'])
+            _facility_id = int(item['facility_id'])
+            _city_id = int(item['city_id'])
+            _landing_point_id = int(item['landing_point_id'])
+            _distance = to_float(item['distance'])
+            obj = {
+                "index": _index,
+                "asn": _asn,
+                "latitude": _latitude,
+                "longitude": _longitude,
+                "facility_id": _facility_id,
+                "city_id": _city_id,
+                "landing_point_id": _landing_point_id,
+                "distance": _distance
+            }
+            return obj
+        except Exception as e:
+            logger.error('Fail when processing line: %s, err: %s, stack: %s', line, e, traceback.format_exc())
+            return None
+        
+
+class VisPhysicalLink(BaseModel):
+    index: int
+    src_pop_index: int
+    dst_pop_index: int
+    src_asn: int
+    dst_asn: int
+    ltype: str
+    cable_ids: list
+
+    @classmethod
+    def from_line(cls, line: str):
+        keys = ['index', 'src_pop_index', 'dst_pop_index', 'src_asn', 'dst_asn', 'ltype', 'cable_ids']
+        try:
+            item = dict(zip(keys, split_string(line)))
+            assert len(item) == 7
+            _index = int(item['index'])
+            _src_pop_index = int(item['src_pop_index'].strip('N'))
+            _dst_pop_index = int(item['dst_pop_index'].strip('N'))
+            _src_asn = int(item['src_asn'])
+            _dst_asn = int(item['dst_asn'])
+            _ltype = item['ltype']
+            _cable_ids = [int(cid) for cid in item['cable_ids'].strip().split(',')] if item['cable_ids'] != 'NULL' else []
+            obj = {
+                "index": _index,
+                "src_pop_index": _src_pop_index,
+                "dst_pop_index": _dst_pop_index,
+                "src_asn": _src_asn,
+                "dst_asn": _dst_asn,
+                "ltype": _ltype,
+                "cable_ids": _cable_ids
+            }
+            return obj
+        except Exception as e:
+            logger.error('Fail when processing line: %s, err: %s, stack: %s', line, e, traceback.format_exc())
+            return None
 
 
 class VisLogicNode(BaseModel):
@@ -209,36 +286,33 @@ class VisLogicNode(BaseModel):
     prefix_size: int
 
     @classmethod
-    def from_line(cls, line, idx=0):
+    def to_obj(cls, idx, asn, asrank):
         try:
-            obj = json.loads(line)
-            latitude = obj.get('latitude', 0)
-            longitude = obj.get('longitude', 0)
-            organization_info = obj.get('organization', None)
+            organization_info = asrank.get('organization', None)
             organization = organization_info.get('orgName', '') if organization_info else ''
-            country_info = obj.get('country', None)
+            country_info = asrank.get('country', None)
             country_name = country_info.get('name', '') if country_info else ''
             country_code = country_info.get('iso', '') if country_info else ''
             res = {
                 "index": idx,
-                "asn": int(obj['asn']),
-                "name": str(obj.get('asnName', '')),
-                "rank": int(obj.get('rank', 10000000)),
+                "asn": int(asrank['asn']),
+                "name": str(asrank.get('asnName', '')),
+                "rank": int(asrank.get('rank', 10000000)),
                 "organization": organization,
                 "country": country_name,
                 "country_code": country_code,
-                "latitude": round(float(latitude), KEEP_DIGITS),
-                "longitude": round(float(longitude), KEEP_DIGITS),
-                "cone_size": int(obj.get('cone', {}).get('numberAsns', 0)),
-                "cone_prefix_size": int(obj.get('cone', {}).get('numberPrefixes', 0)),
-                "degree_provider": int(obj.get('asnDegree', {}).get('provider', 0)),
-                "degree_customer": int(obj.get('asnDegree', {}).get('customer', 0)),
-                "degree_peer": int(obj.get('asnDegree', {}).get('peer', 0)),
-                "prefix_size": int(obj.get('announcing', {}).get("numberPrefixes", 0))
+                "latitude": round(float(asrank['latitude']), KEEP_DIGITS),
+                "longitude": round(float(asrank['longitude']), KEEP_DIGITS),
+                "cone_size": int(asrank.get('cone', {}).get('numberAsns', 0)),
+                "cone_prefix_size": int(asrank.get('cone', {}).get('numberPrefixes', 0)),
+                "degree_provider": int(asrank.get('asnDegree', {}).get('provider', 0)),
+                "degree_customer": int(asrank.get('asnDegree', {}).get('customer', 0)),
+                "degree_peer": int(asrank.get('asnDegree', {}).get('peer', 0)),
+                "prefix_size": int(asrank.get('announcing', {}).get("numberPrefixes", 0))
             }
             return res
         except Exception as e:
-            logger.error(f'failed to generate obj for asrank with {line},'
+            logger.error(f'failed to generate obj for asrank with {asn},'
                          f' err: {e}, stack: {traceback.format_exc()}')
             return None
 
@@ -275,5 +349,32 @@ class VisLogicLink(BaseModel):
             logger.error('failed to generate obj for logic_link with %s, err: %s, stack: %s', str(idx), e, traceback.format_exc())
             return None
 
+class VisCity(BaseModel):
+    index: int
+    city: str
+    state: str
+    country: str
+    latitude: float
+    longitude: float
 
-
+    @classmethod
+    def from_line(cls, line):
+        keys = ['city', 'state', 'country', 'latitude', 'longitude']
+        try:
+            city_info = dict(zip(keys, split_string(line)))
+            obj = {
+                "city": city_info['city'],
+                "state": city_info['state'],
+                "country": city_info['country'],
+                "latitude": round(float(city_info['latitude']), KEEP_DIGITS),
+                "longitude": round(float(city_info['longitude']), KEEP_DIGITS)
+            }
+            return obj
+        except Exception as e:
+            logger.error('failed to generate obj for city with %s, err: %s, stack: %s', line, e, traceback.format_exc())
+            return None
+        
+    @classmethod
+    def fill_unknown_fields(cls, obj, idx):
+        obj['index'] = idx
+        return obj

@@ -33,24 +33,27 @@ def calc_point_distance(pos1:np.array, pos2:np.array):# [lat1, lng1], [lat2, lng
     return np.round(d, KEEP_DIGITS)
 
 
+def haversine_distance(pos1, pos2):
+    radius=np.double(6371.0)
+    lat1, lon1 = np.radians(pos1)
+    lat2, lon2 = np.radians(pos2)
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = np.sin(dlat / 2)**2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2)**2
+    c = 2 * np.arcsin(np.sqrt(a))
+    distance = radius * c
+    return distance
+
+
 def cluster_by_distance(idx_list, pos_info, min_distance=MIN_CLUSTER_DISTANCE):
-    origin_set = set(idx_list)
-    res = []
-    while len(origin_set) > 0:
-        new_set = set()
-        new_set.add(origin_set.pop())
-        remove_set = set()
-        while True:
-            pushd_in = False
-            center_pos = calc_center_pos(new_set, pos_info)
-            for idx in origin_set:
-                if calc_point_distance(pos_info[idx], center_pos) < min_distance:
-                    remove_set.add(idx)
-                    pushd_in = True
-            if not pushd_in:
+    clusters = []
+    for idx in idx_list:
+        found = False
+        for cluster in clusters:
+            if calc_point_distance(pos_info[idx], pos_info[cluster[0]]) < min_distance:
+                cluster.append(idx)
+                found = True
                 break
-            origin_set.difference_update(remove_set)
-            new_set.update(remove_set)
-            remove_set.clear()
-        res.append(new_set)
-    return res
+        if not found:
+            clusters.append([idx])
+    return clusters
