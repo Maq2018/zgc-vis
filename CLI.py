@@ -20,6 +20,7 @@ from config import Config
 from logs import configure_log
 from extension import mongo
 from utils.geometry import calc_center_pos, calc_point_distance, cluster_by_distance
+from utils.conversion import literal_eval
 from collections import defaultdict
 
 
@@ -81,11 +82,12 @@ def import_submarine_cable(file):
     op_list = list()
 
     with open(file, 'r') as fp:
+        next(fp)
         for line in fp:
-            nb_line += 1
-            if nb_line <= SKIP:
-                continue
             cable_obj = VisSubmarineCable.from_line(line)
+            if cable_obj is not None:
+                VisSubmarineCable.fill_unknown_fields(cable_obj, nb_line)
+                nb_line += 1
             op_list.append(cable_obj)
             if len(op_list) > STEP:
                 nb_cable += _bulk_write(_table, op_list)
@@ -95,6 +97,43 @@ def import_submarine_cable(file):
         op_list.clear()
 
     logger.info(f"{os.path.basename(file)} has {nb_line} records, {nb_cable} are imported.")
+
+
+# @submarine_cables.command('import')
+# @click.option('--info', '-i', type=click.Path(exists=True), required=True)
+# @click.option('--geo', '-g', type=click.Path(exists=True), required=True)
+# def import_submarine_cable(info, geo):
+#     _table = TableSelector.get_submarine_cables_table(name='default_sync')
+#     _table.delete_many({})
+
+#     nb_cable = 0
+#     op_list = list()
+#     coords_dict = dict()
+
+#     with open(geo, 'r') as fp:
+#         cable_geo_list = json.load(fp)
+#         for cable_geo in cable_geo_list:
+#             feature_id = cable_geo['properties'].split('id=')[1].split(',')[0]
+#             coords = cable_geo['geometry'].split("coordinates=")[1].strip('}')
+#             coords = literal_eval(coords)
+#             coords = [[tuple(item) for item in sublist] for sublist in coords]
+#             coords_dict[feature_id] = coords
+
+#     with open(info, 'r') as fp:
+#         cable_info_list = json.load(fp)['cables']
+#         idx = 0
+#         for clb_item in cable_info_list:
+#             cable_obj = VisSubmarineCable.from_dict(idx, clb_item, coords_dict)
+#             idx += 1
+#             op_list.append(cable_obj)
+#             if len(op_list) > STEP:
+#                 nb_cable += _bulk_write(_table, op_list)
+#                 op_list.clear()
+#     if len(op_list) > 0:
+#         _bulk_write(_table, op_list)
+#         op_list.clear()
+
+#     logger.info(f"{os.path.basename(info)} has {nb_cable} records.")
 
 
 @endpoint.group(name="landing-points")

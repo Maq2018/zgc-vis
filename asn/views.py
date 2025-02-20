@@ -48,13 +48,16 @@ async def get_nodes(args: PhysicalNodeQuery = Depends()):
 async def get_submarine_cables(args: SubmarineCableQuery = Depends()):
     try:
         _table = TableSelector.get_submarine_cables_table()
-        fields = ['ids', 'nms', 'fids', 'srs']
-        columns = ['id', 'name', 'feature_id', 'source']
+        fields = ['idxs', 'ids', 'nms', 'fids', 'srs']
+        columns = ['index', 'id', 'name', 'feature_id', 'source']
         query_params = dict()
         for i, field in enumerate(fields):
             params = getattr(args, field, None)
             if params:
-                query_params[columns[i]] = {'$in': params.split(',')}
+                if i == 0:
+                    query_params[columns[i]] = {'$in': [int(param) for param in params.split(',')]}
+                else:
+                    query_params[columns[i]] = {'$in': params.split(',')}
         data = []
         async for cur in _table.find(query_params, {'_id': 0}):
             data.append(cur)

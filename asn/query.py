@@ -13,6 +13,7 @@ class PhysicalNodeQuery(BaseModel):
     # Todo: add date
 
 class SubmarineCableQuery(BaseModel):
+    idxs: str = Field(Query(default=''))
     ids: str = Field(Query(default=''))
     nms: str = Field(Query(default='')) # nms: name
     fids: str = Field(Query(default='')) # fids: feature_id

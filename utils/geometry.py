@@ -1,5 +1,6 @@
 import numpy as np
 import logging
+from sklearn.cluster import DBSCAN
 from asn.models import KEEP_DIGITS
 
 MIN_CLUSTER_DISTANCE = 50 # km
@@ -57,3 +58,25 @@ def cluster_by_distance(idx_list, pos_info, min_distance=MIN_CLUSTER_DISTANCE):
         if not found:
             clusters.append([idx])
     return clusters
+
+def cluster_by_distance_dbscan(idx_list, pos_info, min_distance=MIN_CLUSTER_DISTANCE):
+    # check if empty
+    if len(idx_list) == 0:
+        return []
+    # check if only one point
+    if len(idx_list) == 1:
+        return [idx_list]
+    # extract positions
+    positions = np.array([pos_info[idx] for idx in idx_list])
+    # use DBSCAN for clustering
+    db = DBSCAN(eps=min_distance, min_samples=1, metric=calc_point_distance).fit(positions)
+    # get labels
+    labels = db.labels_
+    # create clusters
+    clusters = {}
+    for idx, label in zip(idx_list, labels):
+        if label not in clusters:
+            clusters[label] = []
+        clusters[label].append(idx)
+    # return clusters
+    return list(clusters.values())

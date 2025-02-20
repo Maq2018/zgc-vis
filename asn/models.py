@@ -10,6 +10,7 @@ from utils.conversion import to_float, split_string, parse_wkt_multilinestring, 
 logger = logging.getLogger("asn.models")
 KEEP_DIGITS = 4
 DATE_FORMAT = "%Y-%m-%d"
+TODAY_STR = datetime.now().strftime(DATE_FORMAT)
 
 
 class VisPhysicalNode(BaseModel):
@@ -57,6 +58,7 @@ class VisPhysicalNode(BaseModel):
         
 
 class VisSubmarineCable(BaseModel):
+    index: int
     id: str
     name: str
     feature_id: str
@@ -91,6 +93,33 @@ class VisSubmarineCable(BaseModel):
             logger.error('Fail when processing line: %s, err: %s, stack: %s', line, e, traceback.format_exc())
             return None
         
+    @classmethod
+    def fill_unknown_fields(cls, obj, idx):
+        obj['index'] = idx
+        return obj
+
+    # @classmethod
+    # def from_dict(cls, idx, cbl_item, coords_dict):
+    #     try:
+    #         _id = idx
+    #         _name = cbl_item['cableName']
+    #         _feature_id = cbl_item['cableId']
+    #         _coordinates = coords_dict[_feature_id]
+    #         _source = 'ki3'
+    #         _date = datetime.strptime(TODAY_STR, DATE_FORMAT)
+    #         obj = {
+    #             "id": _id,
+    #             "name": _name,
+    #             "feature_id": _feature_id,
+    #             "coordinates": _coordinates,
+    #             "source": _source,
+    #             "date": _date
+    #         }
+    #         return obj
+    #     except Exception as e:
+    #         logger.error('Fail when processing line: %s, err: %s, stack: %s', cbl_item, e, traceback.format_exc())
+    #         return None
+
 
 class VisLandingPoint(BaseModel):
     index: int
@@ -239,20 +268,22 @@ class VisPhysicalLink(BaseModel):
     dst_asn: int
     ltype: str
     cable_ids: list
+    submarine_ids: list
 
     @classmethod
     def from_line(cls, line: str):
-        keys = ['index', 'src_pop_index', 'dst_pop_index', 'src_asn', 'dst_asn', 'ltype', 'cable_ids']
+        keys = ['index', 'src_pop_index', 'dst_pop_index', 'src_asn', 'dst_asn', 'ltype', 'cable_ids', 'submarine_ids']
         try:
             item = dict(zip(keys, split_string(line)))
-            assert len(item) == 7
+            assert len(item) == 8
             _index = int(item['index'])
             _src_pop_index = int(item['src_pop_index'].strip('N'))
             _dst_pop_index = int(item['dst_pop_index'].strip('N'))
             _src_asn = int(item['src_asn'])
             _dst_asn = int(item['dst_asn'])
             _ltype = item['ltype']
-            _cable_ids = [int(cid) for cid in item['cable_ids'].strip().split(',')] if item['cable_ids'] != 'NULL' else []
+            _cable_ids = [int(cid) for cid in item['cable_ids'].strip().split(',')] if item['cable_ids'] != '' else []
+            _submarine_ids = [int(sid) for sid in item['submarine_ids'].strip().split(',')] if item['submarine_ids'] != '' else []
             obj = {
                 "index": _index,
                 "src_pop_index": _src_pop_index,
@@ -260,7 +291,8 @@ class VisPhysicalLink(BaseModel):
                 "src_asn": _src_asn,
                 "dst_asn": _dst_asn,
                 "ltype": _ltype,
-                "cable_ids": _cable_ids
+                "cable_ids": _cable_ids,
+                "submarine_ids": _submarine_ids
             }
             return obj
         except Exception as e:
